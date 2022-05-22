@@ -16,6 +16,9 @@ class RelationalProcessor():
 
 class RelationalDataProcessor(RelationalProcessor):
 
+    def __init__(self) -> None:
+        super().__init__()
+
     # TODO: Implement upload Data
     def uploadData(self, path: str) -> None:
         pass
@@ -34,6 +37,9 @@ class TriplestoreProcessor():
 
 
 class TriplestoreDataProcessor(TriplestoreProcessor):
+
+    def __init__(self) -> None:
+        super().__init__()
 
     # TODO: Implent Triplestore upload data
     def uploadData(self, path: str) -> None:
