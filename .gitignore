@@ -130,3 +130,8 @@ dmypy.json
 
 # MAC DS STore
 .DS_Store
+
+#Blazegraph
+blazegraph.jar
+blazegraph.jnl
+rules.log

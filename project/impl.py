@@ -41,7 +41,7 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
     def __init__(self) -> None:
         super().__init__()
 
-    # TODO: Implent Triplestore upload data
+    # TODO: Implement Triplestore upload data
     def uploadData(self, path: str) -> None:
         pass
 
@@ -160,38 +160,66 @@ class TripletoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
 
     # TODO: Implement triplestore getPublicationsPublishedInYear
     def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
+        """
+        Retrieve all publications published in the year 'year'
+        """
         pass
 
     # TODO: Implement triplestore getPublicationsByAuthorId
     def getPublicationsByAuthorId(self, id: str) -> pd.DataFrame:
+        """
+        Retrieve all publications linked to the author with authorId id
+        """
         pass
 
     # TODO: Implement triplestore getMostCitedPublication
     def getMostCitedPublication(self) -> pd.DataFrame:
+        """
+        Retrieve the publication containing the most references to itself
+        """
         pass
 
     # TODO: Implement triplestore getMostCitedVenue
     def getMostCitedVenue(self) -> pd.DataFrame:
+        """
+        Retrieve the venue containing the largest amount of references in its publications
+        """
         pass
 
     # TODO: Implement triplestore getVenuesByPublisherId
     def getVenuesByPublisherId(self, id: str) -> pd.DataFrame:
+        """
+        Retrieve the Venues linked to the publisher with publisherId id
+        """
         pass
 
     # TODO: Implement triplestore getPublicationInVenue
     def getPublicationInVenue(self, venueId: str) -> pd.DataFrame:
+        """
+        Retrieve all publications from venue with id venueId
+        """
         pass
 
     # TODO: Implement triplestore getJournalArticlesInIssue
     def getJournalArticlesInIssue(self, issue: str, volume: str, journalId: str) -> pd.DataFrame:
+        """
+        Retrieve the journal articles with issueNumber equal to issue and volumneNumber equal to volumn
+        from venue with id journalId
+        """
         pass
 
     # TODO: Implement triplestore getJournalArticlesInVolume
     def getJournalArticlesInVolume(self, volume: str, journalId: str) -> pd.DataFrame:
+        """
+        Retrieve the journal articles with volume equal to volume from venue with id journalId
+        """
         pass
 
     # TODO: Implement triplestore getJournalArticlesInJournal
     def getJournalArticlesInJournal(self, journalId: str) -> pd.DataFrame:
+        """
+        Retrieve the journal articlesfrom venue with id journalId
+        """
         pass
 
     # TODO: Implement triplestore getProceedingsByEvent
@@ -200,14 +228,23 @@ class TripletoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
 
     # TODO: Implement triplestore getPublicationAuthors
     def getPublicationAuthors(self, publicationId: str) -> pd.DataFrame:
+        """
+        Retrieve all authors of a publication with id publicationId
+        """
         pass
 
     # TODO: Implement triplestore getPublicationByAuthorName
     def getPublicationByAuthorName(self, authorPartialName: str) -> pd.DataFrame:
+        """
+        Retrieve all publications linked to author of partial name authorPartialName
+        """
         pass
 
     # TODO: Implement triplestore getDistinctPublishersOfPublications
     def getDistinctPublishersOfPublications(self, pubIdList: list(str)) -> pd.DataFrame:
+        """
+        Retrieve the set of distinct publishers based on a list of publication ids
+        """
         pass
 
 

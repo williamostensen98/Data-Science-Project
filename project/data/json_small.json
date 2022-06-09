@@ -1,0 +1,84 @@
+{
+    "authors": {
+        "doi:10.1016/j.websem.2021.100655": [
+            {
+                "family": "Espinoza-Arias",
+                "given": "Paola",
+                "orcid": "0000-0002-3938-2064"
+            },
+            {
+                "family": "Garijo",
+                "given": "Daniel",
+                "orcid": "0000-0003-0454-7145"
+            },
+            {
+                "family": "Corcho",
+                "given": "Oscar",
+                "orcid": "0000-0002-9260-0753"
+            }
+        ],
+        "doi:10.1007/s10115-017-1100-y": [
+            {
+                "family": "Diefenbach",
+                "given": "Dennis",
+                "orcid": "0000-0002-0046-2219"
+            }
+        ],
+        "doi:10.1016/j.websem.2014.03.003": [
+            {
+                "family": "Groth",
+                "given": "Paul",
+                "orcid": "0000-0003-0183-6910"
+            },
+            {
+                "family": "Gray",
+                "given": "Alasdair J.G.",
+                "orcid": "0000-0002-5711-4872"
+            },
+            {
+                "family": "Harland",
+                "given": "Lee",
+                "orcid": "0000-0003-0461-0028"
+            }
+        ]
+    },
+    "venues_id": {
+        "doi:10.1016/j.websem.2021.100655": [
+            "issn:1570-8268"
+        ],
+        "doi:10.1007/s10115-017-1100-y": [
+            "issn:0219-1377",
+            "issn:0219-3116"
+        ],
+        "doi:10.1016/j.websem.2014.03.003": [
+            "issn:1570-8268"
+        ]
+    },
+    "references": {
+        "doi:10.1016/j.websem.2021.100655": [
+            "doi:10.1007/s10115-017-1100-y",
+            "doi:10.1016/j.websem.2014.03.003",
+            "doi:10.1093/nar/gkz997",
+            "doi:10.3390/publications7030050",
+            "doi:10.1017/s0269888920000065",
+            "doi:10.3390/info11030129",
+            "doi:10.1007/s00778-018-0528-3"
+        ],
+        "doi:10.1007/s10115-017-1100-y": [
+            "doi:10.1016/j.websem.2014.06.002"
+        ],
+        "doi:10.1016/j.websem.2014.03.003": [
+            
+        ]
+    },
+    "publishers": {
+        "crossref:78": {
+            "id": "crossref:78",
+            "name": "Elsevier BV"
+        },
+        "crossref:297": {
+            "id": "crossref:297",
+            "name": "Springer Science and Business Media LLC"
+        }
+    }
+}
