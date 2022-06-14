@@ -1,0 +1,4 @@
+id,title,type,publication_year,issue,volume,chapter,publication_venue,venue_type,publisher,event
+doi:10.1016/j.websem.2021.100655,Crossing The Chasm Between Ontology Engineering And Application Development: A Survey,journal-article,2021,,70,,Journal Of Web Semantics,journal,crossref:78,
+doi:10.1007/s10115-017-1100-y,Core Techniques Of Question Answering Systems Over Knowledge Bases: A Survey,journal-article,2017,3,55,,Knowledge And Information Systems,journal,crossref:297,
+doi:10.1016/j.websem.2014.03.003,Api-Centric Linked Data Integration: The Open Phacts Discovery Platform Case Study,journal-article,2014,,29,,Journal Of Web Semantics,journal,crossref:78,
