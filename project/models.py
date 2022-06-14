@@ -3,7 +3,7 @@ class IdentifiableEntity():
     def __init__(self, id) -> None:
         self.id = id
 
-    def getIds(self) -> list(str):
+    def getIds(self) -> list[str]:
         return list(self.id)
 
 
@@ -79,7 +79,7 @@ class Publication(IdentifiableEntity):
     def getPublicationVenue(self) -> Venue or None:
         return self.publicationVenue
 
-    def getAuthors(self) -> set(Person):
+    def getAuthors(self) -> set[Person]:
         return set(self.authors)
 
 

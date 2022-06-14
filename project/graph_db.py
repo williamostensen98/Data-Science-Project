@@ -592,3 +592,18 @@ print(grd_qp.getMostCitedVenue())
 print(grd_qp.getVenuesByPublisherId("crossref:78"))
 print(grd_qp.getDistinctPublishersOfPublications(
     ["doi:10.1016/j.websem.2021.100655", "doi:10.1016/j.websem.2014.03.003", "doi:10.1007/s10115-017-1100-y"]))
+
+# PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+# PREFIX schema: <https://schema.org/>
+
+# SELECT ?title ?year ?id (COUNT(?citation) as ?citations)
+# WHERE
+# {
+#   ?s schema:identifier ?id .
+#   ?s schema:name ?title .
+#   ?s schema:datePublished ?year .
+#   ?s schema:citation ?citation
+# }
+# GROUP BY ?id ?title ?year 
+# ORDER BY desc(?citations)
+# LIMIT 1
