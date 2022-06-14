@@ -105,6 +105,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     # TODO: Implement relational getPublicationsPublishedInYear
     def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
+
         pass
 
     # TODO: Implement relational getPublicationsByAuthorId
