@@ -54,10 +54,8 @@ class RelationalProcessor():
 
     def setDbPath(self, path: str) -> None:
         self.dbPath = path
-        #TODO: right place??
-        with connect(path) as con:
-
-            con.commit()
+        
+        
 
 
 class RelationalDataProcessor(RelationalProcessor):
@@ -76,6 +74,11 @@ class RelationalDataProcessor(RelationalProcessor):
         return df
 
     def uploadData(self, path: str) -> None:
+        db_path = self.getDbPath()
+        
+        with connect(db_path) as con:
+
+            con.commit()
         
         file_ending = path.split(".")
         file_type = file_ending[1]
@@ -155,7 +158,7 @@ class RelationalDataProcessor(RelationalProcessor):
 
             
             ## ADD JSON-DATAFRAMES TO DATABASE
-            with connect("relational.db") as con:
+            with connect("db_path") as con:
 
                 df_organisation.to_sql("organisations", con, if_exists="replace", index=False)
                 df_author.to_sql("authors", con, if_exists="replace", index=False)
@@ -201,7 +204,7 @@ class RelationalDataProcessor(RelationalProcessor):
             df_publications = df_csv
             
             # ADD CSV-DATAFRAMES TO DATABASE
-            with connect("relational.db") as con:
+            with connect("db_path") as con:
                 df_publications.to_sql("publications", con, if_exists='replace', index=False)
                 df_venues.to_sql("venues", con, if_exists='replace', index=False)
                 
