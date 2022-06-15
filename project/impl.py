@@ -54,6 +54,10 @@ class RelationalProcessor():
 
     def setDbPath(self, path: str) -> None:
         self.dbPath = path
+        # TODO: right place??
+        with connect(path) as con:
+
+            con.commit()
 
 
 class RelationalDataProcessor(RelationalProcessor):
@@ -73,154 +77,143 @@ class RelationalDataProcessor(RelationalProcessor):
 
     def uploadData(self, path: str) -> None:
 
-        # DATAFRAME AUTHORS & AUTHOR_LIST
-        with open("/Users/TomKobes/Documents/Unibo/DataScience/Data/data.json", "r", encoding="utf-8") as f:
-            json_doc = json.load(f)
-            doi_authors = json_doc["authors"]
+        file_ending = path.split(".")
+        file_type = file_ending[1]
 
-            df_author = pd.DataFrame({'family': [], 'given': [], 'orcid': []})
-            df_doi_orcid = pd.DataFrame({'doi': [], 'orcid': []})
+        if file_type == 'json':
 
-            for doi in doi_authors:
+            # DATAFRAME AUTHORS & AUTHOR_LIST
+            with open(path, "r", encoding="utf-8") as f:
+                json_doc = json.load(f)
+                doi_authors = json_doc["authors"]
 
-                for author in doi_authors[doi]:
+                df_author = pd.DataFrame(
+                    {'family': [], 'given': [], 'orcid': []})
+                df_doi_orcid = pd.DataFrame({'doi': [], 'orcid': []})
 
-                    new_row_author = pd.DataFrame(author, index=[0])
-                    df_author = pd.concat(
-                        [new_row_author, df_author.loc[:]]).reset_index(drop=True)
+                for doi in doi_authors:
 
-                    dict = {'doi': doi, 'orcid': author['orcid']}
-                    new_row_orcid = pd.DataFrame(dict, index=[0])
-                    df_doi_orcid = pd.concat(
-                        [new_row_orcid, df_doi_orcid.loc[:]]).reset_index(drop=True)
+                    for author in doi_authors[doi]:
 
-            df_author = df_author.drop_duplicates(
-                subset=['orcid'], keep='last').reset_index(drop=True)
+                        new_row_author = pd.DataFrame(author, index=[0])
+                        df_author = pd.concat(
+                            [new_row_author, df_author.loc[:]]).reset_index(drop=True)
 
-        # DATAFRAME PUBLISHERS
-        with open("/Users/TomKobes/Documents/Unibo/DataScience/Data/data.json", "r", encoding="utf-8") as f:
-            json_doc = json.load(f)
-            publishers = json_doc["publishers"]
+                        dict = {'doi': doi, 'orcid': author['orcid']}
+                        new_row_orcid = pd.DataFrame(dict, index=[0])
+                        df_doi_orcid = pd.concat(
+                            [new_row_orcid, df_doi_orcid.loc[:]]).reset_index(drop=True)
 
-            l_name = []
-            l_crossref = []
+                df_author = df_author.drop_duplicates(
+                    subset=['orcid'], keep='last').reset_index(drop=True)
 
-            for ref in publishers:  # make 2-col DataFrame; doi, dict authours
-                l_name.append(publishers[ref]["name"])
-                l_crossref.append(publishers[ref]['id'])
+            # DATAFRAME PUBLISHERS
 
-            df = pd.DataFrame({'name': pd.Series(l_name),
-                              'crossref': pd.Series(l_crossref)})
-            df_organisation = self.add_internalID(df, 'organisation')
+                publishers = json_doc["publishers"]
 
-        # DATAFRAME VENUES
-        df_venues = pd.read_csv("/Users/TomKobes/Documents/Unibo/DataScience/Data/rp.csv",
-                                keep_default_na=False,
-                                dtype={
-                                    "doi": "string",
-                                    "title": "string",
-                                    "type": "string",
-                                    "publication year": "int",
-                                    "issue": "string",
-                                    "volume": "string",
-                                    "chapter": "string",
-                                    "publication venue": "string",
-                                    "venue type": "string",
-                                    "publisher": "string",
-                                    "event": "string"
-                                })
+                l_name = []
+                l_crossref = []
 
-        venues = df_venues[['publication_venue', 'venue_type', 'event']]
+                for ref in publishers:  # make 2-col DataFrame; doi, dict authours
+                    l_name.append(publishers[ref]["name"])
+                    l_crossref.append(publishers[ref]['id'])
 
-        venues_distinct = venues.drop_duplicates(
-            subset=None, keep='first', inplace=False, ignore_index=False)
-        venues = venues_distinct.reset_index(drop=True)
-        df_venues = self.add_internalID(venues, 'venue')
+                df_organisation = pd.DataFrame(
+                    {'name': pd.Series(l_name), 'crossref': pd.Series(l_crossref)})
 
-        # DATAFRAME ISSN
-        with open("/Users/TomKobes/Documents/Unibo/DataScience/Data/data.json", "r", encoding="utf-8") as f:
-            json_doc = json.load(f)
-            issn = json_doc["venues_id"]
+                #df_organisation = self.add_internalID(df, 'organisation')
 
-            l_doi = []
-            l_issn = []
+            # DATAFRAME ISSN
 
-            for key in issn:
+                issn = json_doc["venues_id"]
 
-                for i in issn[key]:
-                    l_issn.append(i)
-                    l_doi.append(key)
+                l_doi = []
+                l_issn = []
 
-            df_issn = pd.DataFrame(
-                {"issn": pd.Series(l_issn), "doi": pd.Series(l_doi)})
+                for key in issn:
 
-        with open("/Users/TomKobes/Documents/Unibo/DataScience/Data/data.json", "r", encoding="utf-8") as f:
-            json_doc = json.load(f)
-            references = json_doc["references"]
+                    for i in issn[key]:
+                        l_issn.append(i)
+                        l_doi.append(key)
 
-            l_doi = []
-            l_references = []
+                df_issn = pd.DataFrame(
+                    {"issn": pd.Series(l_issn), "doi": pd.Series(l_doi)})
 
-            for key in references:
+            # DATAFRAME REFERENCES
 
-                for i in references[key]:
-                    l_doi.append(i)
-                    l_references.append(key)
+                references = json_doc["references"]
 
-            df_references = pd.DataFrame(
-                {"doi": pd.Series(l_doi), "referes_to": pd.Series(l_references)})
+                l_doi = []
+                l_references = []
 
-        df_publications = pd.read_csv("/Users/TomKobes/Documents/Unibo/DataScience/Data/rp.csv",
-                                      keep_default_na=False,
-                                      dtype={
-                                          "doi": "string",
-                                          "title": "string",
-                                          "type": "string",
-                                          "publication year": "int",
-                                          "issue": "string",
-                                          "volume": "string",
-                                          "chapter": "string",
-                                          "publication venue": "string",
-                                          "venue type": "string",
-                                          "publisher": "string",
-                                          "event": "string"
-                                      })
+                for key in references:
 
-        # Create a new column with internal identifiers for each publication
-        publication_internal_id = []
-        for idx, row in df_publications.iterrows():
-            publication_internal_id.append("publication-" + str(idx))
-        df_publications.insert(0, "internalId", pd.Series(
-            publication_internal_id, dtype="string"))
+                    for i in references[key]:
+                        l_doi.append(i)
+                        l_references.append(key)
 
-        # TODO: Don't lose the publications without crossref
-        pub_org_merge = pd.merge(
-            df_publications, df_organisation, left_on='publisher', right_on='crossref')
+                df_references = pd.DataFrame(
+                    {"doi": pd.Series(l_doi), "referes_to": pd.Series(l_references)})
 
-        pub_final2 = pub_org_merge.drop(
-            labels=['publisher', 'organisation_internalID'], axis=1)
-        pub_final2 = pub_final2.rename(
-            columns={"internalId": "internal_publicationID", "name": "publisher"})
+            # ADD JSON-DATAFRAMES TO DATABASE
+            with connect("relational.db") as con:
 
-        # BUILD AND FILL DATABASE!!
+                df_organisation.to_sql(
+                    "organisations", con, if_exists="replace", index=False)
+                df_author.to_sql(
+                    "authors", con, if_exists="replace", index=False)
+                df_doi_orcid.to_sql("authorslist", con,
+                                    if_exists='replace', index=False)
+                df_references.to_sql("references_to", con,
+                                     if_exists='replace', index=False)
+                df_issn.to_sql("issn", con, if_exists='replace', index=False)
 
-        with connect("publications.db") as con:
+        if file_type == 'csv':
 
-            con.commit()
+            # DATAFRAME VENUES
+            df_csv = pd.read_csv('/Users/TomKobes/Documents/Unibo/DataScience/Data/rp.csv',
+                                 keep_default_na=False,
+                                 dtype={
+                                     "doi": "string",
+                                     "title": "string",
+                                     "type": "string",
+                                     "publication year": "int",
+                                     "issue": "string",
+                                     "volume": "string",
+                                     "chapter": "string",
+                                     "publication venue": "string",
+                                     "venue type": "string",
+                                     "publisher": "string",
+                                     "event": "string"
+                                 })
 
-        with connect("publications.db") as con:
+            venues = df_csv[['publication_venue', 'venue_type', 'event']]
 
-            df_organisation.to_sql("organisations", con,
-                                   if_exists="replace", index=False)
-            df_author.to_sql("authors", con, if_exists="replace", index=False)
-            df_doi_orcid.to_sql("authorslist", con,
-                                if_exists='replace', index=False)
-            pub_final2.to_sql("publications", con,
-                              if_exists='replace', index=False)
-            df_venues.to_sql("venues", con, if_exists='replace', index=False)
-            df_references.to_sql("references_to", con,
-                                 if_exists='replace', index=False)
-            df_issn.to_sql("issn", con, if_exists='replace', index=False)
+            venues_distinct = venues.drop_duplicates(
+                subset=None, keep='first', inplace=False, ignore_index=False)
+            venues = venues_distinct.reset_index(drop=True)
+
+            df_venues = venues
+
+            # DATAFRAME PUBLICATIONS
+            publication_internal_id = []
+            for idx, row in df_csv.iterrows():
+                publication_internal_id.append("publication-" + str(idx))
+            df_csv.insert(0, "internalId", pd.Series(
+                publication_internal_id, dtype="string"))
+
+            df_publications = df_csv
+
+            # ADD CSV-DATAFRAMES TO DATABASE
+            with connect("relational.db") as con:
+                df_publications.to_sql(
+                    "publications", con, if_exists='replace', index=False)
+                df_venues.to_sql(
+                    "venues", con, if_exists='replace', index=False)
+
+        elif file_type != 'json' and file_type != 'csv':
+            print("FILE TYPE NOT SUPPORTED")
+            return
 
 
 class TriplestoreProcessor():
@@ -568,7 +561,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT * FROM publications WHERE publication_year = %d" % year
             df_sql = pd.read_sql(query, con)
 
@@ -576,7 +569,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getPublicationsByAuthorId(self, id: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT doi FROM authorslist WHERE authororcID = '%s'" % id
             df_sql = pd.read_sql(query, con)
 
@@ -584,22 +577,25 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getMostCitedPublication(self) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT referes_to, COUNT(*) FROM references_to GROUP BY referes_to"
             df_sql = pd.read_sql(query, con)
+
+            publication = "SELECT * FROM publications"
+            df_publications = pd.read_sql(publication, con)
 
             max = df_sql.loc[df_sql['COUNT(*)'].idxmax()]
             max = max['referes_to']
 
             df_max = pd.DataFrame({"doi": pd.Series(max)})
-            # TODO: where do we get df_publications from
+
             result = pd.merge(df_publications, df_max,
                               left_on='id', right_on='doi')
         return result
 
     def getMostCitedVenue(self) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT publication_venue, id FROM publications"
             df_sql = pd.read_sql(query, con)
 
@@ -621,7 +617,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getVenuesByPublisherId(self, id: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT publication_venue FROM publications WHERE crossref = '%s'" % id
             df_sql = pd.read_sql(query, con)
             df_sql1 = df_sql.drop_duplicates(
@@ -631,26 +627,74 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getPublicationInVenue(self, venueId: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
-            query = "SELECT * FROM publications WHERE issn = '%s'" % venueId
+        with connect("relational.db") as con:
+            query = "SELECT crossref FROM venues WHERE issn = '%s'" % venueId
             df_sql = pd.read_sql(query, con)
 
-            df_sql1 = df_sql.drop_duplicates(
+            df_empty = pd.DataFrame()
+            for crossref in df_sql['crossref']:
+
+                query2 = "SELECT * FROM publications WHERE crossref = '%s'" % crossref
+                df_publication = pd.read_sql(query2, con)
+
+                df_empty = pd.concat(
+                    [df_empty, df_publication], ignore_index=True)
+
+            df_result = df_empty.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
 
         return df_sql
 
-    # TODO: Implement relational getJournalArticlesInIssue
     def getJournalArticlesInIssue(self, issue: str, volume: str, journalId: str) -> pd.DataFrame:
-        pass
+        with connect("relational.db") as con:
+            publication = "SELECT * FROM publications"
+            df_publications = pd.read_sql(publication, con)
 
-    # TODO: Implement relational getJournalArticlesInVolume
+            query_issue = "SELECT id FROM publications WHERE issue = '%s'" % issue
+            issue_sql = pd.read_sql(query_issue, con)
+
+            query_volume = "SELECT id FROM publications WHERE volume = '%s'" % volume
+            volume_sql = pd.read_sql(query_volume, con)
+
+            query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
+            df_sql = pd.read_sql(query, con)
+            df_sql1 = df_sql.drop_duplicates(
+                subset=None, keep='first', inplace=False, ignore_index=False)
+            pub_id_merge = pd.merge(
+                df_publications, df_sql1, left_on='id', right_on='doi')
+
+            volume_issue_merge = pd.merge(
+                issue_sql, volume_sql, left_on='id', right_on='id')
+
+            result_merge = pd.merge(
+                pub_id_merge, volume_issue_merge, left_on='id', right_on='id')
+
+        return result_merge
+
     def getJournalArticlesInVolume(self, volume: str, journalId: str) -> pd.DataFrame:
-        pass
+        with connect("relational.db") as con:
+            publication = "SELECT * FROM publications"
+            df_publications = pd.read_sql(publication, con)
+
+            query_volume = "SELECT id FROM publications WHERE volume = '%s'" % volume
+            volume_sql = pd.read_sql(query_volume, con)
+
+            query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
+            df_sql = pd.read_sql(query, con)
+
+            df_sql1 = df_sql.drop_duplicates(
+                subset=None, keep='first', inplace=False, ignore_index=False)
+            pub_id_merge = pd.merge(
+                df_publications, df_sql1, left_on='id', right_on='doi')
+
+            result_merge = pd.merge(
+                pub_id_merge, volume_sql, left_on='id', right_on='id')
+
+        return result_merge
 
     def getJournalArticlesInJournal(self, journalId: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
             df_sql = pd.read_sql(query, con)
 
@@ -664,7 +708,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getProceedingsByEvent(self, eventPartialName: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT event FROM venues WHERE lower(event) LIKE '%s'" % f'%{eventPartialName}%'
             df_sql = pd.read_sql(query, con)
 
@@ -672,7 +716,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getPublicationAuthors(self, publicationId: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             query = "SELECT authororcID FROM authorslist WHERE doi = '%s'" % publicationId
             df_sql = pd.read_sql(query, con)
 
@@ -686,7 +730,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
     def getPublicationByAuthorName(self, authorPartialName: str) -> pd.DataFrame:
 
-        with connect("publications.db") as con:  # getPublicationByAuthorName
+        with connect("relational.db") as con:
             query2 = "SELECT OrcID FROM authors WHERE lower(FamilyName) LIKE '%s' OR lower(GivenName) LIKE '%s'" % (
                 f'%{authorPartialName}%', f'%{authorPartialName}%')
             df_sql2 = pd.read_sql(query2, con)
@@ -709,7 +753,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
         return df_empty
 
     def getDistinctPublishersOfPublications(self, pubIdList) -> pd.DataFrame:
-        with connect("publications.db") as con:
+        with connect("relational.db") as con:
             df_empty = pd.DataFrame()
             for doi in pubIdList:
                 query = "SELECT crossref FROM publications WHERE id = '%s'" % pubIdList
