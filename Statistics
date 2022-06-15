@@ -1,0 +1,137 @@
+## STATISTICS
+#first cell
+
+
+from pandas import read_csv #importing libraries
+publications = read_csv("/Users/jacopobettega/desktop/relational_publications.csv", keep_default_na=False) #reading the csv
+publications.info() 
+publications.describe(include="all") #showing the trends in all the data
+#second cell
+
+
+## MEDIAN Value of the Publication Years
+#third cell
+
+
+
+print("-- Median value in publication years")
+print(publications["publication_year"].median())#adding the median to the statistics/trends of "publication_year"
+#fourth cell
+
+
+
+print("-- Indexing publications by Type")
+publications["type"].unique()#searching for unique and repeated values in "type"
+type_count = publications["type"].value_counts() #indexing all the "type" inside publications
+type_count.plot(kind="barh") 
+
+publications_per_type = publications["type"].value_counts()
+publications_per_type
+#fifth cell
+
+
+
+print("--Indexing publications by Venue Types")
+publications["venue_type"].unique()#searching for unique and repeated values in "venue type"
+type_count = publications["venue_type"].value_counts()
+type_count.plot(kind="barh") 
+
+publications_per_venue_type = publications["venue_type"].value_counts()
+publications_per_venue_type
+#sixth cell
+
+
+
+## Line Diagram Plot
+#seventh cell
+
+
+publications_per_year_sorted = publications_per_year.sort_index()
+publications_per_year_sorted
+publications_per_year_sorted.plot()
+#octave celll
+
+
+
+
+
+print("--Searching for unique and repeated values in ids, none is the same twice, so we get a list of all the 500")
+publications["id"].unique()
+#ninth cell
+
+
+publications_per_id = publications["id"].value_counts()
+publications_per_id
+#tenth cell
+
+
+print("-- Over 200 publications were published in 2021")
+publications["publication_year"].unique()#searching for unique and repeated values in "publisher"
+type_count = publications["publication_year"].value_counts() #indexing all the "publication_year" inside publications
+type_count.plot (kind="barh")
+publications_per_year = publications["publication_year"].value_counts()
+publications_per_year
+#eleventh cell
+
+
+
+## Line Diagram Plot 
+#twelfth cell
+
+
+
+publications_per_year_sorted = publications_per_year.sort_index()
+publications_per_year_sorted
+
+publications_per_year_sorted.plot()
+#thirteenth cell
+
+
+
+
+print("-- Over 140 publications got 297 citations by others")
+publications["publisher"].unique()#searching for unique and repeated values in "publisher"
+type_count = publications ["publisher"].value_counts()
+type_count.plot (kind="barh")
+
+publications_per_publisher = publications["publisher"].value_counts()
+publications_per_publisher
+#fourteenth cell
+
+
+
+
+
+
+
+print("--Most of the publications have undefined chapter number, and none has more than one")
+publications["chapter"].unique()#searching for unique and repeated values in "chapter"
+type_count = publications ["chapter"].value_counts()
+type_count.plot (kind="barh")
+
+publications_per_chapter = publications["chapter"].value_counts()
+publications_per_chapter
+#fifteenth cell 
+
+
+
+
+
+
+
+
+
+print("--50 publications are in the Scientometrics and 30 in the Sustainability Publication Venues")
+publications["publication_venue"].unique()#searching for the first ten "publication_venue"
+best_venues = publications ["publication_venue"].value_counts() [:10]
+best_venues.plot (kind="barh")
+
+publications_per_pub_venue = publications["publication_venue"].value_counts()
+publications_per_pub_venue
+#sixteenth cell
+
+
+
+
+
+
