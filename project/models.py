@@ -127,7 +127,7 @@ class Book(Venue):
 
 class Proceedings(Venue):
 
-    def __init__(self, id, title, event) -> None:
+    def __init__(self, id, title, event=None) -> None:
         super().__init__(id, title)
         self.event = event
 
