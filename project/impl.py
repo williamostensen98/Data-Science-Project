@@ -54,12 +54,7 @@ class RelationalProcessor():
 
     def setDbPath(self, path: str) -> None:
         self.dbPath = path
-        # TODO: right place??
-        with connect(path) as con:
-
-            con.commit()
-
-
+        
 class RelationalProcessor():
 
     def __init__(self) -> None:
@@ -173,7 +168,7 @@ class RelationalDataProcessor(RelationalProcessor):
                     {"doi": pd.Series(l_doi), "referes_to": pd.Series(l_references)})
 
             # ADD JSON-DATAFRAMES TO DATABASE
-            with connect("db_path") as con:
+            with connect(db_path) as con:
 
                 df_organisation.to_sql(
                     "organisations", con, if_exists="replace", index=False)
@@ -191,27 +186,29 @@ class RelationalDataProcessor(RelationalProcessor):
             df_csv = pd.read_csv(path,
                                  keep_default_na=False,
                                  dtype={
-                                     "doi": "string",
+                                     "id": "string",
                                      "title": "string",
                                      "type": "string",
-                                     "publication year": "int",
+                                     "publication_year": "int",
                                      "issue": "string",
                                      "volume": "string",
                                      "chapter": "string",
-                                     "publication venue": "string",
-                                     "venue type": "string",
+                                     "publication_venue": "string",
+                                     "venue_type": "string",
                                      "publisher": "string",
                                      "event": "string"
                                  })
-
-            venues = df_csv[['publication_venue', 'venue_type', 'event']]
-
+            
+            df_csv =  df_csv.rename(columns={"publication_year": "year", "publication_venue": "venueName", "venue_type": "venueType"})
+            venues = df_csv[['venueName', 'venueType', 'event']]
+            venues = self.add_internalID(venues, 'venue')
+            
             venues_distinct = venues.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
             venues = venues_distinct.reset_index(drop=True)
 
             df_venues = venues
-
+            
             # DATAFRAME PUBLICATIONS
             publication_internal_id = []
             for idx, row in df_csv.iterrows():
@@ -219,10 +216,12 @@ class RelationalDataProcessor(RelationalProcessor):
             df_csv.insert(0, "internalId", pd.Series(
                 publication_internal_id, dtype="string"))
 
-            df_publications = df_csv
-
+            
+            df_publications_merge = pd.merge(df_csv, df_venues[['venue_internalID', 'venueName']], on='venueName')
+            df_publications =  df_publications_merge.rename(columns={"venue_internalID": "venueId"})
+            
             # ADD CSV-DATAFRAMES TO DATABASE
-            with connect("db_path") as con:
+            with connect(db_path) as con:
                 df_publications.to_sql(
                     "publications", con, if_exists='replace', index=False)
                 df_venues.to_sql(
@@ -232,7 +231,7 @@ class RelationalDataProcessor(RelationalProcessor):
             print("FILE TYPE NOT SUPPORTED")
             return
 
-
+       # print(df_publications.columns, df_venues.columns, df_author.columns, df_organisation.columns, df_doi_orcid.columns, df_issn.columns, df_references)
 class TriplestoreProcessor():
 
     # This is the string defining the base URL used to defined
@@ -580,9 +579,9 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT * FROM publications WHERE publication_year = %d" % year
+            query = "SELECT * FROM publications WHERE year = %d" %year
             df_sql = pd.read_sql(query, con)
-
+                 
         return df_sql
 
     def getPublicationsByAuthorId(self, id: str) -> pd.DataFrame:
@@ -1113,9 +1112,9 @@ class GenericQueryProcessor(QueryProcessor):
         volume = row['volume']
         typ = row['type']
         chapter = row['chapter']
-        if URIRef(typ) == Schema.JournalArticle:
+        if URIRef(typ) == Schema.JournalArticle or typ == 'journal-article':
             model = JournalArticle(id, year, title, issue, volume)
-        elif URIRef(typ) == Schema.BookChapter:
+        elif URIRef(typ) == Schema.BookChapter or typ == 'book-chapter':
             model = BookChapter(id, year, title, chapter)
         else:
             model = ProceeedingsPaper(id, year, title)
@@ -1124,7 +1123,7 @@ class GenericQueryProcessor(QueryProcessor):
             venueName = row['venueName']
             venueId = row['venueId']
             venueType = row['venueType']
-            if URIRef(venueType) == Schema.Journal:
+            if URIRef(venueType) == Schema.Journal or venueType == 'journal':
                 venue = Journal(venueId, venueName)
             else:
                 venue = Book(venueId, venueName)
@@ -1413,15 +1412,15 @@ class GenericQueryProcessor(QueryProcessor):
 # print(generic.getPublicationInVenue("issn:0219-3116"))
 # print(generic.getPublicationsByAuthorId("0000-0002-3938-2064"))
 
-# rel_path = "relational.db"
-# rel_dp = RelationalDataProcessor()
-# rel_dp.setDbPath(rel_path)
-# rel_dp.uploadData("data/relational_publications.csv")
-# rel_dp.uploadData("data/relational_other_data.json")
+rel_path = "relational.db"
+rel_dp = RelationalDataProcessor()
+rel_dp.setDbPath(rel_path)
+rel_dp.uploadData("data/relational_publications.csv")
+rel_dp.uploadData("data/relational_other_data.json")
 
 # Then, create the RDF triplestore (remember first to run the
 # Blazegraph instance) using the related source data
-grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
+# grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
 # grp_dp = TriplestoreDataProcessor()
 # grp_dp.setEndpointUrl(grp_endpoint)
 # grp_dp.uploadData("data/graph_publications.csv")
@@ -1429,18 +1428,18 @@ grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
 
 # In the next passage, create the query processors for both
 # the databases, using the related classes
-# rel_qp = RelationalQueryProcessor()
-# rel_qp.setDbPath(rel_path)
+rel_qp = RelationalQueryProcessor()
+rel_qp.setDbPath(rel_path)
 
-grp_qp = TriplestoreQueryProcessor()
-grp_qp.setEndpointUrl(grp_endpoint)
+# grp_qp = TriplestoreQueryProcessor()
+# grp_qp.setEndpointUrl(grp_endpoint)
 
-# Finally, create a generic query processor for asking
-# about data
+# # Finally, create a generic query processor for asking
+# # about data
 generic = GenericQueryProcessor()
-# generic.addQueryProcessor(rel_qp)
-generic.addQueryProcessor(grp_qp)
+generic.addQueryProcessor(rel_qp)
+# generic.addQueryProcessor(grp_qp)
 
-result_q1 = generic.getPublicationsPublishedInYear(2020)
-result_q2 = generic.getPublicationsByAuthorId("0000-0001-9857-1511")
+result_q1 = generic.getPublicationsPublishedInYear(2021)
+#result_q2 = generic.getPublicationsByAuthorId("0000-0001-9857-1511")
 print(result_q1)
