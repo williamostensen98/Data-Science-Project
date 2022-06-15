@@ -741,7 +741,32 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         df_sparql = get(self.getEndpointUrl(), query, True)
         return df_sparql
 
-    def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
+    def getPublicationQuery(self):
+        q = """ ?s schema:name ?title .
+                ?s rdf:type ?type .
+                ?s schema:identifier ?id .
+                ?s schema:datePublished ?year .
+                OPTIONAL {
+                {
+                SELECT * WHERE {
+                    ?s schema:isPartOf ?venue .
+                    ?venue schema:identifier ?venueId .
+                    ?venue schema:name ?venueName .
+                    ?venue rdf:type ?venueType .
+                    }
+                    LIMIT 1
+                }
+                }
+                OPTIONAL {
+                ?s schema:issueNumber ?issue .
+                }
+                OPTIONAL {?s schema:volumeNumber ?volume .
+                }
+                OPTIONAL {?s schema:bookEdition ?chapter .}
+                """
+        return q
+
+    def getURIData(self, uri):
         selection = """SELECT *
                        WHERE {
                         ?s schema:name ?title .
@@ -750,14 +775,24 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
                         ?s schema:datePublished ?year .
                         ?s rdf:type ?type .
                         ?s schema:volumeNumber ?volume .
-                        ?s schema:datePublished "%d". 
+                        ?s schema:datePublished ?year. 
                         OPTIONAL {
                         ?s schema:issueNumber ?issue .
                         }
                         OPTIONAL {?s schema:volumeNumber ?volume .
                         }
                         OPTIONAL {?s schema:bookEdition ?chapter .}
-                        }""" % year
+                         FILTER(?s = <%s>)
+                        }""" % uri
+
+        return self.runQuery(selection)
+
+    def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
+        selection = """SELECT *
+                        WHERE {
+                        %s
+                        ?s schema:datePublished "%d". 
+                        }""" % (self.getPublicationQuery(), year)
 
         return self.runQuery(selection)
 
@@ -765,31 +800,30 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         """
         Retrieve all publications linked to the author with authorId id
         """
-        selection = """SELECT ?title ?id ?year ?name ?type
+        selection = """SELECT *
                         WHERE {
-                        ?s schema:name ?title .
-                        ?s schema:identifier ?id .
-                        ?s schema:datePublished ?year .
-                        ?s rdf:type ?type .
+                        %s
                         ?s schema:author ?author .
-                        ?author schema:identifier "%s" . 
-                        ?author schema:givenName ?name .
-                        }""" % id
+                        ?author schema:identifier "%s" .  
+                       }""" % (self.getPublicationQuery(), id)
         return self.runQuery(selection)
 
     def getVenuesByPublisherId(self, id: str) -> pd.DataFrame:
         """
         Retrieve the Venues linked to the publisher with publisherId id
         """
-        selection = """SELECT ?id ?name ?type
+        selection = """SELECT *
                     WHERE {
                     VALUES ?type {
-                        schema:Periodical schema:Book }
-                        ?s schema:name ?name .
+                        schema:Periodical schema:Book schema:Event}
+                    ?s schema:name ?name .
                     ?s schema:identifier ?id .
                     ?s rdf:type ?type.
+                    OPTIONAL {?s schema:description ?event .}
                     ?s schema:isPartOf ?publisher .
                     ?publisher schema:identifier "%s" .
+                    ?publisher schema:identifier ?publisherId .
+                    ?publisher schema:name ?publisherName .
                     }
                     """ % id
         return self.runQuery(selection)
@@ -799,17 +833,13 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         Retrieve all publications from venue with id venueId
         """
         selection = """
-                    SELECT ?id ?name
+                    SELECT *
                     WHERE {
-                    VALUES ?type {
-                        schema:ScholarlyArticle schema:Chapter }
-                        ?s schema:name ?name .
-                    ?s schema:identifier ?id .
-                    ?s rdf:type ?type.
+                    %s
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier "%s" .
                     }
-                    """ % venueId
+                    """ % (self.getPublicationQuery(), venueId)
         return self.runQuery(selection)
 
     def getMostCitedPublication(self) -> pd.DataFrame:
@@ -817,32 +847,54 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         Retrieve the publication containing the most references to itself
         """
         selection = """
-                    SELECT ?id (COUNT(?id) as ?citations)
-                    WHERE
-                    {
+                    SELECT ?title ?year ?id ?issue ?volume ?chapter ?venueId ?venueName ?venueType (COUNT(?citation) as ?citations)
+                    WHERE {
+                    ?s schema:name ?title .
+                    ?s rdf:type ?type .
                     ?s schema:identifier ?id .
+                    ?s schema:datePublished ?year .
+                    OPTIONAL {
+                        {
+                        SELECT * WHERE {
+                            ?s schema:isPartOf ?venue .
+                            ?venue schema:identifier ?venueId .
+                            ?venue schema:name ?venueName .
+                            ?venue rdf:type ?venueType .
+                        }
+                        LIMIT 1
+                        }
+                    }
+                    OPTIONAL {
+                        ?s schema:issueNumber ?issue .
+                    }
+                    OPTIONAL {?s schema:volumeNumber ?volume .
+                                }
+                    OPTIONAL {?s schema:bookEdition ?chapter .}
                     ?s schema:citation ?citation
                     }
-                    GROUP BY ?id   
+                    GROUP BY ?id ?title ?year ?issue ?volume ?chapter ?venueId ?venueName ?venueType
+                    ORDER BY desc(?citations)
+                    LIMIT 1
                     """
         df_sparql = self.runQuery(selection)
-        df = df_sparql[df_sparql['citations'] == df_sparql['citations'].max()]
-        return df
+        return df_sparql
 
     def getMostCitedVenue(self) -> pd.DataFrame:
         """
         Retrieve the venue containing the largest amount of references in its publications
         """
         selection = """
-                    SELECT  ?venueId (COUNT(?citation) as ?citations)
+                    SELECT  ?venueId ?venueName ?venueType (COUNT(?citation) as ?citations)
                     WHERE
                     {  
                     ?s schema:identifier ?id .
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier ?venueId .
+                    ?venue schema:name ?venueName .
+                    ?venue rdf:type ?venueType .
                     ?s schema:citation ?citation .
                     }
-                    GROUP BY ?venueId
+                    GROUP BY ?venueId ?venueName ?venueType
                     """
         query = TriplestoreQueryProcessor.base_query + selection
         df_sparql = get(self.getEndpointUrl(), query, True)
@@ -855,19 +907,17 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         from venue with id journalId
         """
         selection = """
-                    SELECT ?id ?name
+                    SELECT *
                     WHERE {
-
+                    %s
                     ?s rdf:type schema:ScholarlyArticle .
-                    ?s schema:name ?name .
-                    ?s schema:identifier ?id .
                     ?s schema:issueNumber "%d" .
                     ?s schema:volumeNumber "%d" .
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier "%s" .
 
                     }    
-                    """ % (issue, volume, journalId)
+                    """ % (self.getPublicationQuery(), issue, volume, journalId)
         return self.runQuery(selection)
 
     def getJournalArticlesInVolume(self, volume: str, journalId: str) -> pd.DataFrame:
@@ -875,18 +925,16 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         Retrieve the journal articles with volume equal to volume from venue with id journalId
         """
         selection = """
-                    SELECT ?id ?name
+                    SELECT *
                     WHERE {
-
+                    %s
                     ?s rdf:type schema:ScholarlyArticle .
-                    ?s schema:name ?name .
-                    ?s schema:identifier ?id .
                     ?s schema:volumeNumber "%d" .
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier "%s" .
 
                     }    
-                    """ % (volume, journalId)
+                    """ % (self.getPublicationQuery(), volume, journalId)
         return self.runQuery(selection)
 
     def getJournalArticlesInJournal(self, journalId: str) -> pd.DataFrame:
@@ -894,25 +942,23 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         Retrieve the journal articlesfrom venue with id journalId
         """
         selection = """
-                    SELECT ?id ?name
+                    SELECT *
                     WHERE {
-
+                    %s
                     ?s rdf:type schema:ScholarlyArticle .
-                    ?s schema:name ?name .
-                    ?s schema:identifier ?id .
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier "%s" .
-
                     }    
-                    """ % journalId
+                    """ % (self.getPublicationQuery(), journalId)
         return self.runQuery(selection)
 
     def getProceedingsByEvent(self, eventPartialName: str) -> pd.DataFrame:
         selection = """
-                    SELECT ?id ?event
+                    SELECT ?id ?title ?event
                     WHERE {
-                    ?s rdf:type schema:Periodical .
+                    ?s rdf:type schema:Event .
                     ?s schema:description ?event .
+                    ?s schema:name ?title .
                     ?s schema:identifier ?id .
                     filter contains(lcase(?event), "%s").
                     }
@@ -945,10 +991,9 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         Retrieve all publications linked to author of partial name authorPartialName
         """
         selection = """
-                    SELECT ?id ?title
+                    SELECT *
                     WHERE {
-                    ?s schema:name ?title .
-                    ?s schema:identifier ?id .
+                    %s
                     {
                     ?s schema:author ?author .
                     ?author schema:givenName ?given .
@@ -960,7 +1005,7 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
                         filter contains(lcase(?family), "%s").
                         }
                     }
-                    """ % (authorPartialName, authorPartialName)
+                    """ % (self.getPublicationQuery(), authorPartialName, authorPartialName)
 
         return self.runQuery(selection)
 
@@ -1002,21 +1047,31 @@ class GenericQueryProcessor(QueryProcessor):
     def addQueryProcessor(self, processor: QueryProcessor) -> None:
         self.queryProcessors.append(processor)
 
-    def createPublication(self, df):
-        for idx, row in df.iterrows():
-            id = row['id']
-            title = row['title']
-            year = row['year']
-            issue = row['issue']
-            volume = row['volume']
-            typ = row['type']
-            chapter = row['chapter']
-            if URIRef(typ) == Schema.JournalArticle:
-                model = JournalArticle(id, year, title, issue, volume)
-            elif URIRef(typ) == Schema.BookChapter:
-                model = BookChapter(id, year, title, chapter)
+    def createPublication(self, row):
+        id = row['id']
+        title = row['title']
+        year = row['year']
+        issue = row['issue']
+        volume = row['volume']
+        typ = row['type']
+        chapter = row['chapter']
+        if URIRef(typ) == Schema.JournalArticle:
+            model = JournalArticle(id, year, title, issue, volume)
+        elif URIRef(typ) == Schema.BookChapter:
+            model = BookChapter(id, year, title, chapter)
+        else:
+            model = ProceeedingsPaper(id, year, title)
+
+        if row['venueName']:
+            venueName = row['venueName']
+            venueId = row['venueId']
+            venueType = row['venueType']
+            if URIRef(venueType) == Schema.Journal:
+                venue = Journal(venueId, venueName)
             else:
-                model = ProceeedingsPaper(id, year, title)
+                venue = Book(venueId, venueName)
+            model.setPublicationVenue(venue)
+
         return model
 
     def getPublicationsPublishedInYear(self, year: int):
@@ -1028,80 +1083,260 @@ class GenericQueryProcessor(QueryProcessor):
         """
         if not self.checkProcessor():
             return "NO QUERY PROCESSORS ADDED"
+
         df_total = pd.DataFrame()
         p_objects = []
-
         for processor in self.queryProcessors:
             df = processor.getPublicationsPublishedInYear(year)
             df = pd.concat([df_total, df], ignore_index=True)
             df_total = df
-
-            for idx, row in df.iterrows():
-                id = row['id']
-                title = row['title']
-                year = row['year']
-                issue = row['issue']
-                volume = row['volume']
-                typ = row['type']
-                chapter = row['chapter']
-                if URIRef(typ) == Schema.JournalArticle:
-                    model = JournalArticle(id, year, title, issue, volume)
-                elif URIRef(typ) == Schema.BookChapter:
-                    model = BookChapter(id, year, title, chapter)
-                else:
-                    model = ProceeedingsPaper(id, year, title)
-
-                p_objects.append(model)
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
 
         return p_objects
 
-    # TODO: Implement generic getPublicationsByAuthorId
     def getPublicationsByAuthorId(self, id: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getMostCitedPublication
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getPublicationsByAuthorId(id)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getMostCitedPublication(self):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getMostCitedVenue
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getMostCitedPublication()
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getMostCitedVenue(self):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getVenuesByPublisherId
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getVenuesByPublisherId(id)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            id = row['venueId']
+            title = row['venueName']
+            venueType = row['venueType']
+            if URIRef(venueType) == Schema.Journal:
+                venue = Journal(id, title)
+            elif URIRef(venueType) == Schema.Book:
+                venue = Book(id, title)
+            else:
+                venue = Proceedings(id, title)
+            p_objects.append(venue)
+
+        return p_objects
+
     def getVenuesByPublisherId(self, id: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getPublicationInVenue
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getVenuesByPublisherId(id)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            id = row['id']
+            title = row['name']
+            venueType = row['type']
+            if URIRef(venueType) == Schema.Journal:
+                venue = Journal(id, title)
+            elif URIRef(venueType) == Schema.Book:
+                venue = Book(id, title)
+            else:
+
+                venue = Proceedings(id, title)
+
+            publisherId = row['publisherId']
+            publisherName = row['publisherName']
+            publisher = Organization(publisherId, publisherName)
+            venue.setPublisher(publisher)
+            p_objects.append(venue)
+
+        return p_objects
+
     def getPublicationInVenue(self, venueId: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getJournalArticlesInIssue
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getPublicationInVenue(venueId)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getJournalArticlesInIssue(self, issue: str, volume: str, journalId: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getJournalArticlesInVolume
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getJournalArticlesInIssue(issue, volume, journalId)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getJournalArticlesInVolume(self, volume: str, journalId: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getJournalArticlesInJournal
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getJournalArticlesInVolume(volume, journalId)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getJournalArticlesInJournal(self, journalId: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getProceedingsByEvent
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getJournalArticlesInJournal(journalId)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getProceedingsByEvent(self, eventPartialName: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getPublicationAuthors
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getProceedingsByEvent(eventPartialName)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            id = row['id']
+            title = row['title']
+            event = row['event']
+            venue = Proceedings(id, title, event)
+            p_objects.append(venue)
+        return p_objects
+
     def getPublicationAuthors(self, publicationId: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getPublicationByAuthorName
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getPublicationAuthors(publicationId)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            id = row['id']
+            givenName = row['given']
+            familyName = row["family"]
+            author = Person(givenName, familyName, id)
+            p_objects.append(author)
+        return p_objects
+
     def getPublicationByAuthorName(self, authorPartialName: str):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
 
-    # TODO: Implement generic getDistinctPublishersOfPublications
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getPublicationByAuthorName(authorPartialName)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            p_objects.append(self.createPublication(row))
+
+        return p_objects
+
     def getDistinctPublishersOfPublications(self, pubIdList):
-        pass
+        if not self.checkProcessor():
+            return "NO QUERY PROCESSORS ADDED"
+
+        df_total = pd.DataFrame()
+        p_objects = []
+        for processor in self.queryProcessors:
+            df = processor.getDistinctPublishersOfPublications(pubIdList)
+            df = pd.concat([df_total, df], ignore_index=True)
+            df_total = df
+
+        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.fillna("")
+        for idx, row in df_total.iterrows():
+            publisherId = row['id']
+            publisherName = row['name']
+            publisher = Organization(publisherId, publisherName)
+
+            p_objects.append(publisher)
+
+        return p_objects
 
 
 grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
@@ -1116,4 +1351,7 @@ grd_qp.setEndpointUrl(grp_endpoint)
 
 generic = GenericQueryProcessor()
 generic.addQueryProcessor(grd_qp)
-generic.getPublicationsPublishedInYear(2017)
+# r = generic.getPublicationsPublishedInYear(2017)
+print(generic.getPublicationInVenue("issn:0219-3116"))
+# print(r.getPublicationVenue().title)
+# print(generic.getPublicationsByAuthorId("0000-0002-3938-2064"))

@@ -340,15 +340,43 @@ class TriplestoreQueryProcessor(TriplestoreProcessor):
         df_sparql = get(self.getEndpointUrl(), query, True)
         return df_sparql
 
-    def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
-        selection = """SELECT ?id ?title 
+    def getURIData(self, uri):
+        selection = """SELECT *
                         WHERE {
-                            ?s schema:name ?title .
-                            ?s schema:identifier ?id .
-                            ?s schema:datePublished "%d". 
-                        }""" % year
+                        ?s schema:name ?title .
+                        ?s schema:identifier ?id .
+                        ?s schema:issueNumber ?issue .
+                        ?s schema:datePublished ?year .
+                        ?s rdf:type ?type .
+                        ?s schema:datePublished ?year. 
+                        OPTIONAL {?s schema:issueNumber ?issue .}
+                        OPTIONAL {?s schema:volumeNumber ?volume .}
+                        OPTIONAL {?s schema:bookEdition ?chapter .}
+                        FILTER(?s = <%s>)
+                        }""" % uri
 
         return self.runQuery(selection)
+
+    def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
+        selection = """SELECT *
+                       WHERE {
+                        ?s schema:name ?title .
+                        ?s schema:identifier ?id .
+                        ?s schema:issueNumber ?issue .
+                        ?s schema:datePublished ?year .
+                        ?s rdf:type ?type .
+                        ?s schema:citation ?citation .
+                        ?s schema:datePublished "%d". 
+                        OPTIONAL {
+                        ?s schema:issueNumber ?issue .
+                        }
+                        OPTIONAL {?s schema:volumeNumber ?volume .
+                        }
+                        OPTIONAL {?s schema:bookEdition ?chapter .}
+                        }""" % year
+
+        df = self.runQuery(selection)
+        cite = "https://comp-data.github.io/res/publication8"
 
     def getPublicationsByAuthorId(self, id: str) -> pd.DataFrame:
         """
@@ -586,12 +614,9 @@ grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
 
 grd_qp = TriplestoreQueryProcessor()
 grd_qp.setEndpointUrl(grp_endpoint)
-print(grd_qp.getPublicationsPublishedInYear(2021))
-print(grd_qp.getPublicationsByAuthorId("0000-0002-3938-2064"))
-print(grd_qp.getMostCitedVenue())
-print(grd_qp.getVenuesByPublisherId("crossref:78"))
-print(grd_qp.getDistinctPublishersOfPublications(
-    ["doi:10.1016/j.websem.2021.100655", "doi:10.1016/j.websem.2014.03.003", "doi:10.1007/s10115-017-1100-y"]))
+# grd_qp.getPublicationsPublishedInYear(2017)
+print(grd_qp.getURIData("https://comp-data.github.io/res/publication1"))
+
 
 # PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 # PREFIX schema: <https://schema.org/>
@@ -604,6 +629,6 @@ print(grd_qp.getDistinctPublishersOfPublications(
 #   ?s schema:datePublished ?year .
 #   ?s schema:citation ?citation
 # }
-# GROUP BY ?id ?title ?year 
+# GROUP BY ?id ?title ?year
 # ORDER BY desc(?citations)
 # LIMIT 1
