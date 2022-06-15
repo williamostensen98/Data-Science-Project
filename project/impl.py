@@ -249,8 +249,6 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
         self.venues_internal_id = {}  # doi: subj
         self.publisher_internal_id = {}  # id: subj
         self.author_internal_id = {}  # id: subj
-        self.venue_publication = {}
-        self.flag = False
         self.pub_idx = 0
         self.ven_idx = 0
         self.auth_idx = 0
@@ -309,12 +307,10 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
 
             # Create Venue Object unless it has already been set
             if row["publication_venue"] in venue_internal_name:
-                print("Venue already exists")
                 venue = self.venues_internal_id[venue_internal_name[row["publication_venue"]]]
             elif row['id'] in self.venues_internal_id:
                 venue = self.venues_internal_id[row['id']]
             else:
-                print("Create venue")
                 venue_id = "venue-" + str(self.ven_idx)
                 self.ven_idx += 1
                 venue = URIRef(TriplestoreProcessor.base_url + venue_id)
@@ -393,7 +389,6 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
         self.addVenues(venues)
         self.addPublishers(publishers)
         self.addReferences(citations)
-        self.flag = True
 
     def get_file_ending(self, filename: str) -> str:
         ending = filename.split(".")
@@ -448,6 +443,7 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
                 publication = self.publication_internal_id[doi]
 
             # Add identifiers
+            venue_publication = {}
             for id in venues[doi][0]:
                 print(id)
                 if id in self.venue_publication:
@@ -463,7 +459,7 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
                     self.ven_idx += 1
                     subject = URIRef(TriplestoreProcessor.base_url + local_id)
                     self.venues_internal_id[doi] = subject
-                    self.venue_publication[id] = doi
+                    venue_publication[id] = doi
 
                 # Add relationship between publication and venue
                 TriplestoreProcessor.graph.add(
