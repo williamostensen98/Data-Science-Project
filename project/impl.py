@@ -136,7 +136,7 @@ class RelationalDataProcessor(RelationalProcessor):
                     l_crossref.append(publishers[ref]['id'])
 
                 df_organisation = pd.DataFrame(
-                    {'name': pd.Series(l_name), 'crossref': pd.Series(l_crossref)})
+                    {'publisherName': pd.Series(l_name), 'publisherId': pd.Series(l_crossref)})
 
                 #df_organisation = self.add_internalID(df, 'organisation')
 
@@ -173,7 +173,7 @@ class RelationalDataProcessor(RelationalProcessor):
                     {"doi": pd.Series(l_doi), "referes_to": pd.Series(l_references)})
 
             # ADD JSON-DATAFRAMES TO DATABASE
-            with connect("db_path") as con:
+            with connect(db_path) as con:
 
                 df_organisation.to_sql(
                     "organisations", con, if_exists="replace", index=False)
@@ -191,20 +191,23 @@ class RelationalDataProcessor(RelationalProcessor):
             df_csv = pd.read_csv(path,
                                  keep_default_na=False,
                                  dtype={
-                                     "doi": "string",
+                                     "id": "string",
                                      "title": "string",
                                      "type": "string",
-                                     "publication year": "int",
+                                     "publication_year": "int",
                                      "issue": "string",
                                      "volume": "string",
                                      "chapter": "string",
-                                     "publication venue": "string",
-                                     "venue type": "string",
+                                     "publication_venue": "string",
+                                     "venue_type": "string",
                                      "publisher": "string",
                                      "event": "string"
                                  })
 
-            venues = df_csv[['publication_venue', 'venue_type', 'event']]
+            df_csv = df_csv.rename(columns={
+                                   "publication_year": "year", "publication_venue": "venueName", "venue_type": "venueType"})
+            venues = df_csv[['venueName', 'venueType', 'event']]
+            venues = self.add_internalID(venues, 'venue')
 
             venues_distinct = venues.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
@@ -219,10 +222,13 @@ class RelationalDataProcessor(RelationalProcessor):
             df_csv.insert(0, "internalId", pd.Series(
                 publication_internal_id, dtype="string"))
 
-            df_publications = df_csv
+            df_publications_merge = pd.merge(
+                df_csv, df_venues[['venue_internalID', 'venueName']], on='venueName')
+            df_publications = df_publications_merge.rename(
+                columns={"venue_internalID": "venueId"})
 
             # ADD CSV-DATAFRAMES TO DATABASE
-            with connect("db_path") as con:
+            with connect(db_path) as con:
                 df_publications.to_sql(
                     "publications", con, if_exists='replace', index=False)
                 df_venues.to_sql(
@@ -580,7 +586,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationsPublishedInYear(self, year: int) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT * FROM publications WHERE publication_year = %d" % year
+            query = "SELECT * FROM publications WHERE year = %d" % year
             df_sql = pd.read_sql(query, con)
 
         return df_sql
@@ -588,10 +594,20 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationsByAuthorId(self, id: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT doi FROM authorslist WHERE authororcID = '%s'" % id
+            query = "SELECT doi FROM authorslist WHERE orcid = '%s'" % id
             df_sql = pd.read_sql(query, con)
 
-        return df_sql
+            df_empty = pd.DataFrame()
+            for doi in df_sql['doi']:
+                query2 = "SELECT * FROM publications WHERE id = '%s'" % doi
+                df = pd.read_sql(query2, con)
+                df_empty = pd.concat(
+                    [df_empty, df], ignore_index=True)
+
+            df_result = df_empty.drop_duplicates(
+                subset=None, keep='first', inplace=False, ignore_index=False)
+
+        return df_result
 
     def getMostCitedPublication(self) -> pd.DataFrame:
 
@@ -603,9 +619,11 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             df_publications = pd.read_sql(publication, con)
 
             max = df_sql.loc[df_sql['COUNT(*)'].idxmax()]
+            count = df_sql['COUNT(*)'].idxmax()
             max = max['referes_to']
 
-            df_max = pd.DataFrame({"doi": pd.Series(max)})
+            df_max = pd.DataFrame(
+                {"doi": pd.Series(max), "citations": int(count)})
 
             result = pd.merge(df_publications, df_max,
                               left_on='id', right_on='doi')
@@ -614,7 +632,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getMostCitedVenue(self) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT publication_venue, id FROM publications"
+            query = "SELECT venueName, id FROM publications"
             df_sql = pd.read_sql(query, con)
 
             query2 = "SELECT referes_to, COUNT(*) FROM references_to GROUP BY referes_to"
@@ -623,20 +641,25 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             df_result = pd.merge(
                 df_sql, df_sql2, left_on='id', right_on='referes_to')
             df_result = df_result.groupby(
-                by=["publication_venue"]).sum().reset_index()
+                by=["venueName"]).sum().reset_index()
 
             max = df_result.loc[df_result['COUNT(*)'].idxmax()]
-            result_venue = max['publication_venue']
+            result_venue = max['venueName']
 
-            query3 = "SELECT * FROM venues WHERE publication_venue = '%s'" % result_venue
+            query3 = "SELECT * FROM venues WHERE venueName = '%s'" % result_venue
             df_sql3 = pd.read_sql(query3, con)
+            print(df_sql3)
+            count = df_result['COUNT(*)'].idxmax()
+            df_max = pd.DataFrame(
+                {"venueId": pd.Series(df_sql3['venueId']), "citations": int(count)})
 
-        return df_sql3
+            return pd.merge(df_sql3, df_max,
+                            left_on='venueId', right_on='venueId')
 
     def getVenuesByPublisherId(self, id: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT publication_venue FROM publications WHERE crossref = '%s'" % id
+            query = "SELECT venueName FROM publications WHERE publisher = '%s'" % id
             df_sql = pd.read_sql(query, con)
             df_sql1 = df_sql.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
@@ -644,7 +667,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
         return df_sql1
 
     def getPublicationInVenue(self, venueId: str) -> pd.DataFrame:
-
+       # TODO: checkup on name crossref and issn
         with connect("relational.db") as con:
             query = "SELECT crossref FROM venues WHERE issn = '%s'" % venueId
             df_sql = pd.read_sql(query, con)
@@ -727,7 +750,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getProceedingsByEvent(self, eventPartialName: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT event FROM venues WHERE lower(event) LIKE '%s'" % f'%{eventPartialName}%'
+            query = "SELECT * FROM venues WHERE lower(event) LIKE '%s'" % f'%{eventPartialName}%'
             df_sql = pd.read_sql(query, con)
 
         return df_sql
@@ -735,12 +758,12 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationAuthors(self, publicationId: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT authororcID FROM authorslist WHERE doi = '%s'" % publicationId
+            query = "SELECT orcid FROM authorslist WHERE doi = '%s'" % publicationId
             df_sql = pd.read_sql(query, con)
 
             df_result = pd.DataFrame()
-            for ids in df_sql['authororcID']:
-                query2 = "SELECT * FROM authors WHERE OrcID = '%s' " % ids
+            for ids in df_sql['orcid']:
+                query2 = "SELECT * FROM authors WHERE orcid = '%s' " % ids
                 df_sql2 = pd.read_sql(query2, con)
                 df_result = pd.concat([df_result, df_sql2], ignore_index=True)
 
@@ -749,13 +772,13 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationByAuthorName(self, authorPartialName: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query2 = "SELECT OrcID FROM authors WHERE lower(FamilyName) LIKE '%s' OR lower(GivenName) LIKE '%s'" % (
+            query2 = "SELECT orcid FROM authors WHERE lower(FamilyName) LIKE '%s' OR lower(GivenName) LIKE '%s'" % (
                 f'%{authorPartialName}%', f'%{authorPartialName}%')
             df_sql2 = pd.read_sql(query2, con)
 
             df_empty1 = pd.DataFrame()
-            for i in df_sql2['OrcID']:
-                query = "SELECT doi FROM authorslist WHERE authororcID = '%s'" % i
+            for i in df_sql2['orcid']:
+                query = "SELECT doi FROM authorslist WHERE orcid = '%s'" % i
                 df_sql = pd.read_sql(query, con)
                 df_empty1 = pd.concat([df_sql, df_empty1], ignore_index=True)
 
@@ -874,9 +897,9 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
                     WHERE {
                     VALUES ?type {
                         schema:Periodical schema:Book schema:Event}
-                    ?s schema:name ?name .
-                    ?s schema:identifier ?id .
-                    ?s rdf:type ?type.
+                    ?s schema:name ?venueName .
+                    ?s schema:identifier ?venueId .
+                    ?s rdf:type ?venueType.
                     OPTIONAL {?s schema:description ?event .}
                     ?s schema:isPartOf ?publisher .
                     ?publisher schema:identifier "%s" .
@@ -945,7 +968,6 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
                     SELECT  ?venueId ?venueName ?venueType (COUNT(?citation) as ?citations)
                     WHERE
                     {  
-                    ?s schema:identifier ?id .
                     ?s schema:isPartOf ?venue .
                     ?venue schema:identifier ?venueId .
                     ?venue schema:name ?venueName .
@@ -953,6 +975,8 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
                     ?s schema:citation ?citation .
                     }
                     GROUP BY ?venueId ?venueName ?venueType
+                    ORDER BY desc(?citations)
+                    LIMIT 1
                     """
         query = TriplestoreQueryProcessor.base_query + selection
         df_sparql = get(self.getEndpointUrl(), query, True)
@@ -1012,12 +1036,12 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
 
     def getProceedingsByEvent(self, eventPartialName: str) -> pd.DataFrame:
         selection = """
-                    SELECT ?id ?title ?event
+                    SELECT ?venueId ?venueName ?event
                     WHERE {
                     ?s rdf:type schema:Event .
                     ?s schema:description ?event .
-                    ?s schema:name ?title .
-                    ?s schema:identifier ?id .
+                    ?s schema:name ?venueName .
+                    ?s schema:identifier ?venueId .
                     filter contains(lcase(?event), "%s").
                     }
                     """ % (eventPartialName)
@@ -1074,13 +1098,13 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
         df_empty = pd.DataFrame()
         for id in pubIdList:
             selection = """
-                        SELECT distinct ?id ?name
+                        SELECT distinct ?publisherId ?publisherName
                         WHERE {
                         ?s schema:identifier "%s".
                         ?s schema:isPartOf ?venue .
                         ?venue schema:isPartOf ?publisher .
-                        ?publisher schema:name ?name .
-                        ?publisher schema:identifier ?id .
+                        ?publisher schema:name ?publisherName .
+                        ?publisher schema:identifier ?publisherId .
                         
                         }
                         """ % id
@@ -1088,7 +1112,7 @@ class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
             df_sparql = self.runQuery(selection)
             df = pd.concat([df_empty, df_sparql], ignore_index=True)
             df_empty = df_sparql
-        return df.drop_duplicates('id')
+        return df_empty.drop_duplicates(subset=['publisherId'])
 
 
 class GenericQueryProcessor(QueryProcessor):
@@ -1113,9 +1137,9 @@ class GenericQueryProcessor(QueryProcessor):
         volume = row['volume']
         typ = row['type']
         chapter = row['chapter']
-        if URIRef(typ) == Schema.JournalArticle:
+        if URIRef(typ) == Schema.JournalArticle or typ == 'journal-article':
             model = JournalArticle(id, year, title, issue, volume)
-        elif URIRef(typ) == Schema.BookChapter:
+        elif URIRef(typ) == Schema.BookChapter or typ == 'book-chapter':
             model = BookChapter(id, year, title, chapter)
         else:
             model = ProceeedingsPaper(id, year, title)
@@ -1124,10 +1148,13 @@ class GenericQueryProcessor(QueryProcessor):
             venueName = row['venueName']
             venueId = row['venueId']
             venueType = row['venueType']
-            if URIRef(venueType) == Schema.Journal:
+            if URIRef(venueType) == Schema.Journal or venueType == 'journal':
                 venue = Journal(venueId, venueName)
+            elif URIRef(venueType) == Schema.Book or venueType == 'book':
+                venue = Book(id, title)
             else:
-                venue = Book(venueId, venueName)
+                venue = Proceedings(id, title)
+
             model.setPublicationVenue(venue)
 
         return model
@@ -1184,7 +1211,8 @@ class GenericQueryProcessor(QueryProcessor):
             df_total = df
         df_total = df_total.drop_duplicates(subset=["id"])
         df_total = df_total.fillna("")
-        for idx, row in df_total.iterrows():
+        df = df_total[df_total['citations'] == df_total['citations'].max()]
+        for idx, row in df.iterrows():
             p_objects.append(self.createPublication(row))
 
         return p_objects
@@ -1196,13 +1224,14 @@ class GenericQueryProcessor(QueryProcessor):
         df_total = pd.DataFrame()
         p_objects = []
         for processor in self.queryProcessors:
-            df = processor.getVenuesByPublisherId(id)
+            df = processor.getMostCitedVenue()
             df = pd.concat([df_total, df], ignore_index=True)
             df_total = df
 
-        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.drop_duplicates(subset=["venueId"])
         df_total = df_total.fillna("")
-        for idx, row in df_total.iterrows():
+        df = df_total[df_total['citations'] == df_total['citations'].max()]
+        for idx, row in df.iterrows():
             id = row['venueId']
             title = row['venueName']
             venueType = row['venueType']
@@ -1227,18 +1256,17 @@ class GenericQueryProcessor(QueryProcessor):
             df = pd.concat([df_total, df], ignore_index=True)
             df_total = df
 
-        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.drop_duplicates(subset=["venueId"])
         df_total = df_total.fillna("")
         for idx, row in df_total.iterrows():
-            id = row['id']
-            title = row['name']
-            venueType = row['type']
-            if URIRef(venueType) == Schema.Journal:
+            id = row['venueId']
+            title = row['venueName']
+            venueType = row['venueType']
+            if URIRef(venueType) == Schema.Journal or venueType == 'journal':
                 venue = Journal(id, title)
-            elif URIRef(venueType) == Schema.Book:
+            elif URIRef(venueType) == Schema.Book or venueType == 'book':
                 venue = Book(id, title)
             else:
-
                 venue = Proceedings(id, title)
 
             publisherId = row['publisherId']
@@ -1330,8 +1358,8 @@ class GenericQueryProcessor(QueryProcessor):
         df_total = df_total.drop_duplicates(subset=["id"])
         df_total = df_total.fillna("")
         for idx, row in df_total.iterrows():
-            id = row['id']
-            title = row['title']
+            id = row['venueId']
+            title = row['venueNaem']
             event = row['event']
             venue = Proceedings(id, title, event)
             p_objects.append(venue)
@@ -1385,11 +1413,11 @@ class GenericQueryProcessor(QueryProcessor):
             df = pd.concat([df_total, df], ignore_index=True)
             df_total = df
 
-        df_total = df_total.drop_duplicates(subset=["id"])
+        df_total = df_total.drop_duplicates(subset=["publisherId"])
         df_total = df_total.fillna("")
         for idx, row in df_total.iterrows():
-            publisherId = row['id']
-            publisherName = row['name']
+            publisherId = row['publisherId']
+            publisherName = row['publisherName']
             publisher = Organization(publisherId, publisherName)
 
             p_objects.append(publisher)
@@ -1413,7 +1441,7 @@ class GenericQueryProcessor(QueryProcessor):
 # print(generic.getPublicationInVenue("issn:0219-3116"))
 # print(generic.getPublicationsByAuthorId("0000-0002-3938-2064"))
 
-# rel_path = "relational.db"
+rel_path = "relational.db"
 # rel_dp = RelationalDataProcessor()
 # rel_dp.setDbPath(rel_path)
 # rel_dp.uploadData("data/relational_publications.csv")
@@ -1429,8 +1457,8 @@ grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
 
 # In the next passage, create the query processors for both
 # the databases, using the related classes
-# rel_qp = RelationalQueryProcessor()
-# rel_qp.setDbPath(rel_path)
+rel_qp = RelationalQueryProcessor()
+rel_qp.setDbPath(rel_path)
 
 grp_qp = TriplestoreQueryProcessor()
 grp_qp.setEndpointUrl(grp_endpoint)
@@ -1441,6 +1469,19 @@ generic = GenericQueryProcessor()
 # generic.addQueryProcessor(rel_qp)
 generic.addQueryProcessor(grp_qp)
 
-result_q1 = generic.getPublicationsPublishedInYear(2020)
-result_q2 = generic.getPublicationsByAuthorId("0000-0001-9857-1511")
-print(result_q1)
+# r = generic.getPublicationsPublishedInYear(2020)
+# r = generic.getPublicationsByAuthorId("0000-0001-9857-1511")
+# r = generic.getMostCitedPublication()
+# r = generic.getMostCitedVenue() #TODO:
+# r = generic.getVenuesByPublisherId("crossref:265") #TODO:
+# r = generic.getPublicationInVenue("issn:1570-8268") #TODO
+# r = generic.getJournalArticlesInIssue('D1', 46,  "issn:0305-1048")
+# r = generic.getJournalArticlesInVolume(46, "issn:0305-1048")
+# r = generic.getJournalArticlesInJournal("issn:0305-1048")
+# r = generic.getProceedingsByEvent()
+# r = generic.getPublicationAuthors("doi:10.1093/nar/gkx998")
+# r = generic.getPublicationByAuthorName("dan") # TODO
+# r = generic.getDistinctPublishersOfPublications(["doi:10.1093/nar/gkx998"]) #TODO
+
+# for res in r:
+#     print(res)

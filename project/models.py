@@ -3,14 +3,14 @@ class IdentifiableEntity():
     def __init__(self, id) -> None:
         self.id = id
 
-    def getIds(self) -> list[str]:
-        return list(self.id)
+    def getIds(self) -> str:
+        return self.id
 
 
 class Person(IdentifiableEntity):
 
     def __init__(self, givenName, familyName, id) -> None:
-        super.__init__(id)
+        super().__init__(id)
         self.givenName = givenName
         self.familyName = familyName
 
