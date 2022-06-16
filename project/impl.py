@@ -54,22 +54,6 @@ class RelationalProcessor():
 
     def setDbPath(self, path: str) -> None:
         self.dbPath = path
-        # TODO: right place??
-        with connect(path) as con:
-
-            con.commit()
-
-
-class RelationalProcessor():
-
-    def __init__(self) -> None:
-        self.dbPath = ""
-
-    def getDbPath(self) -> str:
-        return self.dbPath
-
-    def setDbPath(self, path: str) -> None:
-        self.dbPath = path
 
 
 class RelationalDataProcessor(RelationalProcessor):
@@ -124,7 +108,10 @@ class RelationalDataProcessor(RelationalProcessor):
                 df_author = df_author.drop_duplicates(
                     subset=['orcid'], keep='last').reset_index(drop=True)
 
-            # DATAFRAME PUBLISHERS
+                df_author = df_author.rename(columns={
+                    "orcid": "id"})
+
+            # DATAFRAME ORGANISATION
 
                 publishers = json_doc["publishers"]
 
@@ -154,7 +141,7 @@ class RelationalDataProcessor(RelationalProcessor):
                         l_doi.append(key)
 
                 df_issn = pd.DataFrame(
-                    {"issn": pd.Series(l_issn), "doi": pd.Series(l_doi)})
+                    {"venueId": pd.Series(l_issn), "id": pd.Series(l_doi)})
 
             # DATAFRAME REFERENCES
 
@@ -205,13 +192,16 @@ class RelationalDataProcessor(RelationalProcessor):
                                  })
 
             df_csv = df_csv.rename(columns={
-                                   "publication_year": "year", "publication_venue": "venueName", "venue_type": "venueType"})
+                                   "publication_year": "year", "publication_venue": "venueName", "venue_type": "venueType", "publisher": "publisherId"})
             venues = df_csv[['venueName', 'venueType', 'event']]
-            venues = self.add_internalID(venues, 'venue')
 
             venues_distinct = venues.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
             venues = venues_distinct.reset_index(drop=True)
+
+            venues = self.add_internalID(venues, 'venue')
+            venues = venues.rename(
+                columns={"venue_internalID": "venueId"})
 
             df_venues = venues
 
@@ -223,7 +213,7 @@ class RelationalDataProcessor(RelationalProcessor):
                 publication_internal_id, dtype="string"))
 
             df_publications_merge = pd.merge(
-                df_csv, df_venues[['venue_internalID', 'venueName']], on='venueName')
+                df_csv, df_venues[['venueId', 'venueName']], on='venueName')
             df_publications = df_publications_merge.rename(
                 columns={"venue_internalID": "venueId"})
 
@@ -271,6 +261,11 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
         self.org_idx = 0
 
     def uploadData(self, path: str) -> None:
+        """
+            Takes a path string in and handles the processing of that data based on file type
+            Raises runtime error if exception is met. If successful ut uploads all the data to the endpoint url of
+            the Triplestore
+        """
         if self.get_file_ending(path) == "json":
             try:
                 self.handle_json_upload(path)
@@ -293,6 +288,9 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
         print("GRAPH DATA UPLOADED")
 
     def handle_csv_upload(self, path: str) -> None:
+        """
+            Handles processing of data of type csv.
+        """
         publications = pd.read_csv(path,
                                    keep_default_na=False,
                                    dtype={
@@ -309,12 +307,15 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
                                        "event": "string"
                                    })
         venue_internal_name = {}
+        # Go throguh publications data and add all columns
+        # in the graph
         for idx, row in publications.iterrows():
-
+            # Means that it has been added by json file, so we just get the pointers
             if row['id'] in self.publication_internal_id:
                 subject = self.publication_internal_id[row['id']]
-                # Means that it has been added by json file, so we just get the pointers
+
             else:
+                # we create a new global id and add id to the graph
                 local_id = "publication" + str(self.pub_idx)
                 self.pub_idx += 1
                 subject = URIRef(TriplestoreProcessor.base_url + local_id)
@@ -322,12 +323,14 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
                 TriplestoreProcessor.graph.add(
                     (subject, Schema.identifier, Literal(row["id"])))
 
-            # Create Venue Object unless it has already been set
+            # Create Venue Object unless it has already been set in this method
             if row["publication_venue"] in venue_internal_name:
                 venue = self.venues_internal_id[venue_internal_name[row["publication_venue"]]]
+            # check if it has been created somewhere else also
             elif row['id'] in self.venues_internal_id:
                 venue = self.venues_internal_id[row['id']]
             else:
+                # create new object
                 venue_id = "venue-" + str(self.ven_idx)
                 self.ven_idx += 1
                 venue = URIRef(TriplestoreProcessor.base_url + venue_id)
@@ -347,6 +350,7 @@ class TriplestoreDataProcessor(TriplestoreProcessor):
             ven_name = row["publication_venue"]
             ven_type = row["venue_type"]
 
+            # Object has not been added and we add it to the graph
             if ven_name not in venue_internal_name:
                 venue_internal_name[ven_name] = row['id']
             TriplestoreProcessor.graph.add(
@@ -643,39 +647,68 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             df_result = df_result.groupby(
                 by=["venueName"]).sum().reset_index()
 
+            # get max and make data frame venue name venue max
             max = df_result.loc[df_result['COUNT(*)'].idxmax()]
-            result_venue = max['venueName']
 
-            query3 = "SELECT * FROM venues WHERE venueName = '%s'" % result_venue
+            result_venue = max[['venueName', 'COUNT(*)']]
+
+            # add count and venueId to result_venue -->df_max
+            query3 = "SELECT * FROM venues WHERE venueName = '%s'" % result_venue['venueName']
             df_sql3 = pd.read_sql(query3, con)
-            print(df_sql3)
-            count = df_result['COUNT(*)'].idxmax()
-            df_max = pd.DataFrame(
-                {"venueId": pd.Series(df_sql3['venueId']), "citations": int(count)})
 
-            return pd.merge(df_sql3, df_max,
-                            left_on='venueId', right_on='venueId')
+            count = result_venue['COUNT(*)']
+            df_max = pd.DataFrame(
+                {"venueId": pd.Series(df_sql3['venueId']), "venueName": df_sql3['venueName'], "venueType": df_sql3['venueType'], "citations": int(count)})
+
+            # to get data publisher
+            query_pubid = "SELECT publisherId FROM publications WHERE venueName = '%s'" % result_venue[
+                "venueName"]
+            df_pubid = pd.read_sql(query_pubid, con)
+
+            query_pub = "SELECT * FROM organisations WHERE publisherId = '%s'" % df_pubid['publisherId'][0]
+            df_publisher = pd.read_sql(query_pub, con)
+
+            # insert columns
+            df_max["publisherName"] = df_publisher['publisherName']
+            df_max['publisherId'] = df_publisher['publisherId']
+
+            return df_max
 
     def getVenuesByPublisherId(self, id: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT venueName FROM publications WHERE publisher = '%s'" % id
+            query = "SELECT venueName FROM publications WHERE publisherId = '%s'" % id
             df_sql = pd.read_sql(query, con)
-            df_sql1 = df_sql.drop_duplicates(
+
+            query3 = "SELECT * from organisations WHERE publisherId = '%s'" % id
+            df_sql3 = pd.read_sql(query3, con)
+
+            df_empty = pd.DataFrame()
+            for venue in df_sql['venueName']:
+
+                query2 = "SELECT * FROM venues WHERE venueName = '%s'" % venue
+                df_venue = pd.read_sql(query2, con)
+                df_empty = pd.concat(
+                    [df_empty, df_venue], ignore_index=True)
+
+            df_sql1 = df_empty.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
+
+            df_sql1["publisherName"] = df_sql3['publisherName']
+            df_sql1['publisherId'] = df_sql3['publisherId']
 
         return df_sql1
 
     def getPublicationInVenue(self, venueId: str) -> pd.DataFrame:
-       # TODO: checkup on name crossref and issn
+
         with connect("relational.db") as con:
-            query = "SELECT crossref FROM venues WHERE issn = '%s'" % venueId
+            query = "SELECT * FROM issn WHERE venueId = '%s'" % venueId
             df_sql = pd.read_sql(query, con)
 
             df_empty = pd.DataFrame()
-            for crossref in df_sql['crossref']:
 
-                query2 = "SELECT * FROM publications WHERE crossref = '%s'" % crossref
+            for id in df_sql['id']:
+                query2 = "SELECT * FROM publications WHERE id = '%s'" % id
                 df_publication = pd.read_sql(query2, con)
 
                 df_empty = pd.concat(
@@ -684,7 +717,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             df_result = df_empty.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
 
-        return df_sql
+        return df_result
 
     def getJournalArticlesInIssue(self, issue: str, volume: str, journalId: str) -> pd.DataFrame:
         with connect("relational.db") as con:
@@ -697,12 +730,12 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             query_volume = "SELECT id FROM publications WHERE volume = '%s'" % volume
             volume_sql = pd.read_sql(query_volume, con)
 
-            query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
+            query = "SELECT id FROM issn WHERE venueId = '%s'" % journalId
             df_sql = pd.read_sql(query, con)
             df_sql1 = df_sql.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
             pub_id_merge = pd.merge(
-                df_publications, df_sql1, left_on='id', right_on='doi')
+                df_publications, df_sql1, on='id')
 
             volume_issue_merge = pd.merge(
                 issue_sql, volume_sql, left_on='id', right_on='id')
@@ -720,13 +753,13 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
             query_volume = "SELECT id FROM publications WHERE volume = '%s'" % volume
             volume_sql = pd.read_sql(query_volume, con)
 
-            query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
+            query = "SELECT id FROM issn WHERE venueId = '%s'" % journalId
             df_sql = pd.read_sql(query, con)
 
             df_sql1 = df_sql.drop_duplicates(
                 subset=None, keep='first', inplace=False, ignore_index=False)
             pub_id_merge = pd.merge(
-                df_publications, df_sql1, left_on='id', right_on='doi')
+                df_publications, df_sql1, on='id')
 
             result_merge = pd.merge(
                 pub_id_merge, volume_sql, left_on='id', right_on='id')
@@ -736,11 +769,11 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getJournalArticlesInJournal(self, journalId: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query = "SELECT doi FROM issn WHERE issn = '%s'" % journalId
+            query = "SELECT id FROM issn WHERE venueId = '%s'" % journalId
             df_sql = pd.read_sql(query, con)
 
             df_empty = pd.DataFrame()
-            for i in df_sql['doi']:
+            for i in df_sql['id']:
                 query2 = "SELECT * FROM publications WHERE id = '%s' AND type = 'journal-article'" % i
                 df_sql2 = pd.read_sql(query2, con)
                 df_empty = pd.concat([df_empty, df_sql2], ignore_index=True)
@@ -763,7 +796,7 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
 
             df_result = pd.DataFrame()
             for ids in df_sql['orcid']:
-                query2 = "SELECT * FROM authors WHERE orcid = '%s' " % ids
+                query2 = "SELECT * FROM authors WHERE id = '%s' " % ids
                 df_sql2 = pd.read_sql(query2, con)
                 df_result = pd.concat([df_result, df_sql2], ignore_index=True)
 
@@ -772,16 +805,19 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
     def getPublicationByAuthorName(self, authorPartialName: str) -> pd.DataFrame:
 
         with connect("relational.db") as con:
-            query2 = "SELECT orcid FROM authors WHERE lower(FamilyName) LIKE '%s' OR lower(GivenName) LIKE '%s'" % (
+            # Get all the orcids with the partial name in it
+            query2 = "SELECT id FROM authors WHERE lower(family) LIKE '%s' OR lower(given) LIKE '%s'" % (
                 f'%{authorPartialName}%', f'%{authorPartialName}%')
             df_sql2 = pd.read_sql(query2, con)
 
+            # Select all the doi written by the given orcid
             df_empty1 = pd.DataFrame()
-            for i in df_sql2['orcid']:
+            for i in df_sql2['id']:
                 query = "SELECT doi FROM authorslist WHERE orcid = '%s'" % i
                 df_sql = pd.read_sql(query, con)
                 df_empty1 = pd.concat([df_sql, df_empty1], ignore_index=True)
 
+            # For every doi in df_empty1, select everything from publications
             df_empty = pd.DataFrame()
             for doi in df_empty1['doi']:
                 query3 = "SELECT * FROM publications WHERE id = '%s'" % doi
@@ -794,23 +830,24 @@ class RelationalQueryProcessor(QueryProcessor, RelationalProcessor):
         return df_empty
 
     def getDistinctPublishersOfPublications(self, pubIdList) -> pd.DataFrame:
+
         with connect("relational.db") as con:
             df_empty = pd.DataFrame()
             for doi in pubIdList:
-                query = "SELECT crossref FROM publications WHERE id = '%s'" % pubIdList
+                query = "SELECT publisherId FROM publications WHERE id = '%s'" % doi
                 df_sql = pd.read_sql(query, con)
                 df_empty = pd.concat([df_empty, df_sql], ignore_index=True)
 
             df_result = pd.DataFrame()
-            for i in df_empty['crossref']:
+            for i in df_empty['publisherId']:
 
-                query2 = "SELECT * FROM organisations WHERE crossref = '%s'" % i
+                query2 = "SELECT * FROM organisations WHERE publisherId = '%s'" % i
                 df_sql2 = pd.read_sql(query2, con)
                 df_result = pd.concat([df_result, df_sql2], ignore_index=True)
 
             df_result = df_result.drop_duplicates(
-                subset=['crossref'], keep='first', inplace=False, ignore_index=False)
-            return df_result
+                subset=['publisherId'], keep='first', inplace=False, ignore_index=False)
+            return
 
 
 class TriplestoreQueryProcessor(QueryProcessor, TriplestoreProcessor):
@@ -1235,9 +1272,9 @@ class GenericQueryProcessor(QueryProcessor):
             id = row['venueId']
             title = row['venueName']
             venueType = row['venueType']
-            if URIRef(venueType) == Schema.Journal:
+            if URIRef(venueType) == Schema.Journal or venueType == 'journal':
                 venue = Journal(id, title)
-            elif URIRef(venueType) == Schema.Book:
+            elif URIRef(venueType) == Schema.Book or venueType == 'book':
                 venue = Book(id, title)
             else:
                 venue = Proceedings(id, title)
@@ -1425,27 +1462,11 @@ class GenericQueryProcessor(QueryProcessor):
         return p_objects
 
 
-# grp_endpoint = "http://127.0.0.1:9999/blazegraph/sparql"
-# grp_dp = TriplestoreDataProcessor()
-# grp_dp.setEndpointUrl(grp_endpoint)
-# grp_dp.uploadData("data/json_small.json")
-# grp_dp.uploadData("data/publications_small.csv")
-# grp_dp.uploadData("data/json_small.json")
-
-# grd_qp = TriplestoreQueryProcessor()
-# grd_qp.setEndpointUrl(grp_endpoint)
-
-# generic = GenericQueryProcessor()
-# generic.addQueryProcessor(grd_qp)
-# print(generic.getPublicationsPublishedInYear(2017))
-# print(generic.getPublicationInVenue("issn:0219-3116"))
-# print(generic.getPublicationsByAuthorId("0000-0002-3938-2064"))
-
 rel_path = "relational.db"
-# rel_dp = RelationalDataProcessor()
-# rel_dp.setDbPath(rel_path)
-# rel_dp.uploadData("data/relational_publications.csv")
-# rel_dp.uploadData("data/relational_other_data.json")
+rel_dp = RelationalDataProcessor()
+rel_dp.setDbPath(rel_path)
+rel_dp.uploadData("data/relational_publications.csv")
+rel_dp.uploadData("data/relational_other_data.json")
 
 # Then, create the RDF triplestore (remember first to run the
 # Blazegraph instance) using the related source data
@@ -1466,22 +1487,22 @@ grp_qp.setEndpointUrl(grp_endpoint)
 # Finally, create a generic query processor for asking
 # about data
 generic = GenericQueryProcessor()
-# generic.addQueryProcessor(rel_qp)
+generic.addQueryProcessor(rel_qp)
 generic.addQueryProcessor(grp_qp)
 
 # r = generic.getPublicationsPublishedInYear(2020)
 # r = generic.getPublicationsByAuthorId("0000-0001-9857-1511")
 # r = generic.getMostCitedPublication()
-# r = generic.getMostCitedVenue() #TODO:
-# r = generic.getVenuesByPublisherId("crossref:265") #TODO:
-# r = generic.getPublicationInVenue("issn:1570-8268") #TODO
-# r = generic.getJournalArticlesInIssue('D1', 46,  "issn:0305-1048")
+# r = generic.getMostCitedVenue()
+# r = generic.getVenuesByPublisherId("crossref:265")
+# r = generic.getPublicationInVenue("issn:1570-8268")
+# r = generic.getJournalArticlesInIssue(3, 55,  "issn:0305-1048")
 # r = generic.getJournalArticlesInVolume(46, "issn:0305-1048")
 # r = generic.getJournalArticlesInJournal("issn:0305-1048")
-# r = generic.getProceedingsByEvent()
+# r = generic.getProceedingsByEvent("ed")
 # r = generic.getPublicationAuthors("doi:10.1093/nar/gkx998")
-# r = generic.getPublicationByAuthorName("dan") # TODO
-# r = generic.getDistinctPublishersOfPublications(["doi:10.1093/nar/gkx998"]) #TODO
+# r = generic.getPublicationByAuthorName("dan")
+# r = generic.getDistinctPublishersOfPublications(["doi:10.1093/nar/gkx998"])
 
-# for res in r:
-#     print(res)
+for res in r:
+    print(res)
